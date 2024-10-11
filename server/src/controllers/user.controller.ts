@@ -6,6 +6,9 @@ import ApiError from '@utils/apiError';
 import { User } from '@models/User.model';
 import { validationResult } from 'express-validator';
 import uploadToCloudinary from '@utils/cloudinary';
+import axios from 'axios';
+import { OAuth2Client } from 'google-auth-library';
+
 
 // generate access token and refresh token
 export const generateAccessTokenAndRefreshToken = async (
@@ -219,3 +222,118 @@ export const refreshAccessToken = asyncHandler(
     }
   }
 );
+
+
+// auth controller
+
+const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+
+export const googleAuth = asyncHandler(async (req: Request, res: Response) => {
+  try {
+    const { access_token, id_token } = req.body;
+
+    const ticket = await client.verifyIdToken({
+      idToken: id_token,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+
+    const payload = ticket.getPayload();
+    if (!payload) {
+      throw new ApiError(400, 'Invalid ID token');
+    }
+
+    const response = await axios.get(
+      'https://openidconnect.googleapis.com/v1/userinfo',
+      {
+        headers: { Authorization: `Bearer ${access_token}` },
+      }
+    );
+
+    const userData = response.data;
+
+    const user = await findOrCreateUser({
+      id: userData.sub,
+      name: userData.name,
+      email: userData.email,
+      picture: { data: { url: userData.picture } },
+    });
+
+    const accessToken = user.getAccessToken();
+    const refreshToken = user.getRefreshToken();
+
+    const apiRes = new apiResponse(200, 'Authentication successful', {
+      accessToken,
+      refreshToken,
+    });
+    res.status(apiRes.status).json(apiRes);
+  } catch (error) {
+    console.error('Error authenticating user:', error);
+    res.status(401).json({ error: 'Invalid credentials' });
+  }
+});
+
+// Facebook authentication
+interface FacebookUser {
+  id: string;
+  name: string;
+  email?: string;
+  picture?: {
+    data: {
+      url: string;
+    };
+  };
+}
+
+
+export const facebookAuth = asyncHandler(
+  async (req: Request, res: Response) => {
+    try {
+      const { access_token } = req.body;
+
+      const response = await axios.get('https://graph.facebook.com/me', {
+        params: { access_token, fields: 'id,name,email,picture' },
+      });
+
+      if (response.status !== 200) {
+        throw new ApiError(
+          response.status,
+          'Failed to fetch user data from Facebook'
+        );
+      }
+
+      const userData: FacebookUser = response.data;
+
+      const user = await findOrCreateUser(userData);
+
+      const accessToken = user.getAccessToken();
+      const refreshToken = user.getRefreshToken();
+
+      const apiRes = new apiResponse(200, 'Authentication successful', {
+        accessToken,
+        refreshToken,
+      });
+      res.status(apiRes.status).json(apiRes);
+    } catch (error) {
+      console.error('Error authenticating user:', error);
+      res.status(401).json({ error: 'Invalid credentials' });
+    }
+  }
+);
+
+const findOrCreateUser = async (userData: any) => {
+  const existingUser = await User.findOne({ email: userData.email });
+
+  if (existingUser) {
+    return existingUser;
+  }
+
+  const newUser = new User({
+    name: userData.name,
+    email: userData.email,
+    avatar: userData.picture?.data?.url || '',
+  });
+
+  await newUser.save();
+  return newUser;
+};
+

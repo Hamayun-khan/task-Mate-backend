@@ -23,8 +23,11 @@ app.use(cookieParser());
 import userRoute from './routes/user.routes';
 import taskRoute from './routes/tasks.routes';
 
+import authRouter from 'routes/auth.routes';
+
 app.use('/api/v1/user', userRoute);
 app.use('/api/v1/task', taskRoute);
+app.use('/api/v1/auth', authRouter);
 
 app.use(globalErrorHandler);
 
