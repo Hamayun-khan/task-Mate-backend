@@ -19,11 +19,9 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use(cookieParser());
 
 // Routes implementation
-
 import userRoute from './routes/user.routes';
 import taskRoute from './routes/tasks.routes';
-
-import authRouter from 'routes/auth.routes';
+import authRouter from './routes/auth.routes';
 
 app.use('/api/v1/user', userRoute);
 app.use('/api/v1/task', taskRoute);

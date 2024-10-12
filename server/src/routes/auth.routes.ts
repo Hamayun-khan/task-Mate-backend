@@ -1,9 +1,11 @@
 import express from 'express';
-import { googleAuth, facebookAuth } from '@controllers/user.controller';
-
+import { facebookAuth, googleCallback } from '@controllers/user.controller';
 const router = express.Router();
-
-router.route('/google').post(googleAuth);
+router.get('/test', (req, res) => {
+  console.log('Test route hit!');
+  res.status(200).send('Test successful');
+});
 router.route('/facebook').post(facebookAuth);
+router.route('/google/callback').post(googleCallback);
 
 export default router;

@@ -9,7 +9,6 @@ import uploadToCloudinary from '@utils/cloudinary';
 import axios from 'axios';
 import { OAuth2Client } from 'google-auth-library';
 
-
 // generate access token and refresh token
 export const generateAccessTokenAndRefreshToken = async (
   userId: string
@@ -223,54 +222,139 @@ export const refreshAccessToken = asyncHandler(
   }
 );
 
-
 // auth controller
-
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+const tokenEndpoint = 'https://oauth2.googleapis.com/token';
+const redirectUri =
+  'https://commonly-beloved-calf.ngrok-free.app/api/v1/auth/google/callback'; // Ensure this matches your frontend
 
-export const googleAuth = asyncHandler(async (req: Request, res: Response) => {
-  try {
-    const { access_token, id_token } = req.body;
+export const googleCallback = asyncHandler(
+  async (req: Request, res: Response) => {
+    try {
+      console.log('Google Callback hit!');
+      const { code } = req.body;
 
-    const ticket = await client.verifyIdToken({
-      idToken: id_token,
-      audience: process.env.GOOGLE_CLIENT_ID,
-    });
+      // 1. Exchange authorization code for tokens
+      const tokenResponse = await axios.post(tokenEndpoint, {
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: redirectUri,
+        client_id: process.env.GOOGLE_CLIENT_ID,
+        client_secret: process.env.GOOGLE_CLIENT_SECRET,
+      });
 
-    const payload = ticket.getPayload();
-    if (!payload) {
-      throw new ApiError(400, 'Invalid ID token');
-    }
+      const { access_token, id_token } = tokenResponse.data;
 
-    const response = await axios.get(
-      'https://openidconnect.googleapis.com/v1/userinfo',
-      {
-        headers: { Authorization: `Bearer ${access_token}` },
+      // 2. Verify ID token
+      const ticket = await client.verifyIdToken({
+        idToken: id_token,
+        audience: process.env.GOOGLE_CLIENT_ID,
+      });
+      const payload = ticket.getPayload();
+      if (!payload) {
+        throw new ApiError(400, 'Invalid ID token');
       }
-    );
 
-    const userData = response.data;
+      // 3. Get user data from Google
+      const userDataResponse = await axios.get(
+        'https://www.googleapis.com/oauth2/v2/userinfo',
+        {
+          headers: { Authorization: `Bearer ${access_token}` },
+        }
+      );
+      const userData = userDataResponse.data;
 
-    const user = await findOrCreateUser({
-      id: userData.sub,
-      name: userData.name,
-      email: userData.email,
-      picture: { data: { url: userData.picture } },
-    });
+      // 4. Find or create user in your database
+      let user = await User.findOne({ email: userData.email });
+      if (!user) {
+        user = await User.create({
+          name: userData.name,
+          email: userData.email,
+        });
+      }
 
-    const accessToken = user.getAccessToken();
-    const refreshToken = user.getRefreshToken();
+      // 5. Generate access and refresh tokens for your app
+      const tokenData = await generateAccessTokenAndRefreshToken(user._id);
+      if (!tokenData) {
+        throw new ApiError(500, 'Failed to generate tokens');
+      }
+      const { accessToken, refreshToken } = tokenData;
 
-    const apiRes = new apiResponse(200, 'Authentication successful', {
-      accessToken,
-      refreshToken,
-    });
-    res.status(apiRes.status).json(apiRes);
-  } catch (error) {
-    console.error('Error authenticating user:', error);
-    res.status(401).json({ error: 'Invalid credentials' });
+      // 6. Set cookies (adjust options as needed)
+      const cookieOptions = {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        expires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      };
+
+      res.cookie('accessToken', accessToken, cookieOptions);
+      res.cookie('refreshToken', refreshToken, cookieOptions);
+
+      // 7. Send successful response
+      return res.status(200).json(
+        new apiResponse(200, 'Google authentication successful', {
+          user: await User.findById(user._id).select('-password -refreshToken'),
+          accessToken,
+          refreshToken,
+        })
+      );
+    } catch (error) {
+      console.error('Error during Google authentication:', error);
+      if (error instanceof ApiError) {
+        return res.status(error.statusCode).json({ message: error.message });
+      }
+      res.status(500).json({ message: 'Internal server error' });
+    }
   }
-});
+);
+
+// const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+
+// export const googleAuth = asyncHandler(async (req: Request, res: Response) => {
+//   try {
+//     const { access_token, id_token } = req.body;
+//     console.log('Received tokens:', { access_token, id_token }); // Log tokens for debugging
+
+//     const ticket = await client.verifyIdToken({
+//       idToken: id_token,
+//       audience: process.env.GOOGLE_CLIENT_ID,
+//     });
+
+//     const payload = ticket.getPayload();
+//     if (!payload) {
+//       throw new ApiError(400, 'Invalid ID token');
+//     }
+
+//     const response = await axios.get(
+//       'https://openidconnect.googleapis.com/v1/userinfo',
+//       {
+//         headers: { Authorization: `Bearer ${access_token}` },
+//       }
+//     );
+
+//     const userData = response.data;
+//     console.log('User data from Google:', userData); // Log user data for debugging
+
+//     const user = await findOrCreateUser({
+//       id: userData.sub,
+//       name: userData.name,
+//       email: userData.email,
+//       picture: { data: { url: userData.picture } },
+//     });
+
+//     const accessToken = user.getAccessToken();
+//     const refreshToken = user.getRefreshToken();
+
+//     const apiRes = new apiResponse(200, 'Authentication successful', {
+//       accessToken,
+//       refreshToken,
+//     });
+//     res.status(apiRes.status).json(apiRes);
+//   } catch (error) {
+//     console.error('Error authenticating user:', error); // Log error for debugging
+//     res.status(401).json({ error: 'Invalid credentials' });
+//   }
+// });
 
 // Facebook authentication
 interface FacebookUser {
@@ -283,7 +367,6 @@ interface FacebookUser {
     };
   };
 }
-
 
 export const facebookAuth = asyncHandler(
   async (req: Request, res: Response) => {
@@ -336,4 +419,3 @@ const findOrCreateUser = async (userData: any) => {
   await newUser.save();
   return newUser;
 };
-
