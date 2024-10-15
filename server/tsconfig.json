@@ -10,6 +10,7 @@
     "removeComments": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
+    "types": ["node", "jest"],
     "baseUrl": "./src",
     "paths": {
       "@models/*": ["models/*"],

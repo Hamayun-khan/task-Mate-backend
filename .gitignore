@@ -5,6 +5,7 @@
 node_modules/
 .env
 .vscode/
+backup/
 
 # Logs
 logs
