@@ -13,11 +13,15 @@ export interface IUser extends Document {
   coverImage?: string;
   role: 'admin' | 'user';
   refreshToken?: string;
+  resetPasswordToken?: string; // New field
+  resetPasswordExpires?: Date; // New field
+  resetPasswordId?: string;
   isModified(path: string): boolean;
   tasks: Schema.Types.ObjectId[];
   matchPassword: (enteredPassword: string) => Promise<boolean>;
   getRefreshToken: () => string;
   getAccessToken: () => string;
+  getResetPasswordToken: () => string; // New method
 }
 
 const userSchema: Schema<IUser> = new mongoose.Schema(
@@ -43,6 +47,17 @@ const userSchema: Schema<IUser> = new mongoose.Schema(
       type: String,
       unique: true,
       required: [true, 'please type your password'],
+    },
+    resetPasswordToken: {
+      // New field
+      type: String,
+    },
+    resetPasswordExpires: {
+      // New field
+      type: Date,
+    },
+    resetPasswordId: {
+      type: String,
     },
     avatar: {
       type: String,
@@ -137,6 +152,25 @@ userSchema.methods.getRefreshToken = function (): string {
   const options: SignOptions = { expiresIn: expiry };
 
   return jwt.sign(payload, secret, options);
+};
+
+userSchema.methods.getResetPasswordToken = function (): string {
+  const user = this as IUser;
+
+  // Generate a token using JWT
+  const resetToken = jwt.sign(
+    { id: user._id },
+    process.env.RESET_PASSWORD_SECRET!,
+    {
+      expiresIn: '1h', // Token valid for 1 hour
+    }
+  );
+
+  // Set the reset password token and expiration
+  user.resetPasswordToken = resetToken;
+  user.resetPasswordExpires = new Date(Date.now() + 3600000); // 1 hour from now
+
+  return resetToken;
 };
 
 export const User = mongoose.model<IUser>('User', userSchema);

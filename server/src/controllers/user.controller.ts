@@ -6,6 +6,9 @@ import { User } from '@models/User.model';
 import { validationResult } from 'express-validator';
 import uploadToCloudinary from '@utils/cloudinary';
 import { Request, Response } from 'express';
+import crypto from 'crypto';
+import nodemailer from 'nodemailer';
+import bcrypt from 'bcrypt';
 
 // generate access token and refresh token
 export const generateAccessTokenAndRefreshToken = async (
@@ -217,5 +220,136 @@ export const refreshAccessToken = asyncHandler(
       // Handle other potential errors that may arise
       throw new ApiError(500, 'Internal server error');
     }
+  }
+);
+
+export const forgotPassword = asyncHandler(
+  async (req: Request, res: Response) => {
+    console.log('Forgot password request received:', req.body);
+    const { email } = req.body;
+
+    // Check if the user exists
+    const user = await User.findOne({ email });
+    console.log('User found:', user ? 'Yes' : 'No');
+    if (!user) {
+      throw new ApiError(404, 'User not found');
+    }
+
+    // Generate a password reset token
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const resetTokenHash = crypto
+      .createHash('sha256')
+      .update(resetToken)
+      .digest('hex');
+    console.log('Reset token generated:', resetToken);
+    console.log('Reset token hash:', resetTokenHash);
+
+    // Set token expiry time (1 hour)
+    user.resetPasswordToken = resetTokenHash;
+    user.resetPasswordExpires = new Date(Date.now() + 3600000); // 1 hour from now
+    await user.save({ validateBeforeSave: false });
+    console.log('User updated with reset token');
+
+    console.log('CLIENT_URL:', process.env.CLIENT_URL);
+    // Create reset URL
+    const resetUrl = `${process.env.CLIENT_URL}/reset-password/${resetToken}`;
+    console.log('Reset URL:', resetUrl);
+
+    // Send email
+    const transporter = nodemailer.createTransport({
+      service: 'Gmail',
+      auth: {
+        user: process.env.EMAIL_FROM,
+        pass: process.env.EMAIL_PASSWORD,
+      },
+    });
+
+    const mailOptions = {
+      to: email,
+      from: process.env.EMAIL_FROM,
+      subject: 'Password Reset',
+      text: `You requested a password reset. Click the link to reset your password: ${resetUrl}`,
+    };
+
+    try {
+      await transporter.sendMail(mailOptions);
+      console.log('Password reset email sent successfully');
+      return res
+        .status(200)
+        .json(new apiResponse(200, 'Password reset link sent to your email'));
+    } catch (error) {
+      console.error('Error sending email:', error);
+      throw new ApiError(500, 'Error sending email. Please try again later.');
+    }
+  }
+);
+
+export const getResetToken = asyncHandler(
+  async (req: Request, res: Response) => {
+    console.log('Get reset token request received:', req.params);
+    const { resetId } = req.params;
+    const user = await User.findOne({
+      resetPasswordId: resetId,
+      resetPasswordExpires: { $gt: Date.now() },
+    });
+
+    console.log('User found for reset token:', user ? 'Yes' : 'No');
+    if (!user) {
+      throw new ApiError(400, 'Invalid or expired reset ID');
+    }
+
+    console.log('Reset token retrieved:', user.resetPasswordToken);
+    return res.json({ resetToken: user.resetPasswordToken });
+  }
+);
+
+export const resetPassword = asyncHandler(
+  async (req: Request, res: Response) => {
+    console.log('Reset password request received:', req.body);
+    const { token, newPassword, confirmPassword } = req.body;
+
+    // Check if passwords match
+    if (newPassword !== confirmPassword) {
+      console.error('Password mismatch:', { newPassword, confirmPassword });
+      throw new ApiError(400, 'Passwords do not match');
+    }
+
+    // Hash the token to compare with the stored hash
+    const resetTokenHash = crypto
+      .createHash('sha256')
+      .update(token)
+      .digest('hex');
+    console.log('Hashed reset token:', resetTokenHash);
+
+    // Find the user with the matching reset token and check if it has expired
+    const user = await User.findOne({
+      resetPasswordToken: resetTokenHash,
+      resetPasswordExpires: { $gt: Date.now() }, // Ensure token has not expired
+    });
+
+    if (!user) {
+      console.error('User not found for token:', resetTokenHash);
+      throw new ApiError(400, 'Invalid or expired token');
+    }
+
+    // Log existing hashed password for comparison
+    console.log('Current hashed password in DB:', user.password);
+
+    // Hash the new password before saving it
+    const newPasswordHash = await bcrypt.hash(newPassword, 10);
+    console.log('New hashed password to be saved:', newPasswordHash);
+
+    // Save the new password
+    user.password = newPasswordHash; // Update with new hashed password
+    user.resetPasswordToken = undefined; // Clear the reset token
+    user.resetPasswordExpires = undefined; // Clear the expiry
+
+    // Save the updated user information
+    await user.save();
+    console.log(`Password reset for user: ${user.email}`); // Add your logging here
+
+    return res
+      .status(200)
+      .json(new apiResponse(200, 'Password has been successfully reset'));
   }
 );

@@ -4,6 +4,9 @@ import {
   loginUser,
   logoutUser,
   refreshAccessToken,
+  forgotPassword,
+  resetPassword,
+  getResetToken,
 } from '@controllers/user.controller';
 import upload from 'middleware/multer.middleware';
 import { verifyJwt } from 'middleware/auth.middleware';
@@ -23,5 +26,9 @@ router.route('/login').post(loginUser);
 // secure routes
 router.route('/logout').post(verifyJwt, logoutUser);
 router.route('/refresh-token').post(refreshAccessToken);
+
+router.route('/forgot-password').post(forgotPassword); // Route to request a password reset
+router.route('/reset-password').post(resetPassword); // Route to reset the password
+router.route('/reset-password-web/:resetId').get(getResetToken);
 
 export default router;
