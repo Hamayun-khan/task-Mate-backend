@@ -237,12 +237,13 @@ export const forgotPassword = asyncHandler(
 
     // Generate a password reset token
     const resetToken = crypto.randomBytes(32).toString('hex');
+    console.log('Reset token generated:', resetToken); // Log the plain token
+
     const resetTokenHash = crypto
       .createHash('sha256')
       .update(resetToken)
       .digest('hex');
-    console.log('Reset token generated:', resetToken);
-    console.log('Reset token hash:', resetTokenHash);
+    console.log('Reset token hash:', resetTokenHash); // Log the hashed token
 
     // Set token expiry time (1 hour)
     user.resetPasswordToken = resetTokenHash;
@@ -252,7 +253,8 @@ export const forgotPassword = asyncHandler(
 
     console.log('CLIENT_URL:', process.env.CLIENT_URL);
     // Create reset URL
-    const resetUrl = `${process.env.CLIENT_URL}/reset-password/${resetToken}`;
+    const resetUrl = `${process.env.CLIENT_URL}/api/v1/user/reset-password/${resetToken}`;
+
     console.log('Reset URL:', resetUrl);
 
     // Send email
@@ -306,7 +308,8 @@ export const getResetToken = asyncHandler(
 export const resetPassword = asyncHandler(
   async (req: Request, res: Response) => {
     console.log('Reset password request received:', req.body);
-    const { token, newPassword, confirmPassword } = req.body;
+    const { token } = req.params; // Extract token from URL parameters
+    const { newPassword, confirmPassword } = req.body;
 
     // Check if passwords match
     if (newPassword !== confirmPassword) {
@@ -346,7 +349,7 @@ export const resetPassword = asyncHandler(
 
     // Save the updated user information
     await user.save();
-    console.log(`Password reset for user: ${user.email}`); // Add your logging here
+    console.log(`Password reset for user: ${user.email}`);
 
     return res
       .status(200)

@@ -10,6 +10,8 @@ dotenv.config({
   path: path.resolve(__dirname, '../.env'),
 });
 require('dotenv').config();
+
+
 console.log('Access Token Secret:', process.env.ACCESS_TOKEN_SECRET);
 
 console.log('Cloudinary Cloud Name:', process.env.CLOUDINARY_CLOUD_NAME);

@@ -61,6 +61,7 @@ const userSchema: Schema<IUser> = new mongoose.Schema(
     },
     avatar: {
       type: String,
+
       default: null,
     },
     coverImage: {

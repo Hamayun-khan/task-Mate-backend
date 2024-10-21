@@ -17,6 +17,10 @@ app.use(morgan('dev'));
 app.use(express.json({ limit: '16kb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
+app.use(
+  '/.well-known',
+  express.static(path.join(__dirname, '../../.well-known'))
+); // Adjust the path here
 app.use(cookieParser());
 
 // Routes implementation
